@@ -191,6 +191,8 @@ HRESULT CompileShaderFromFile( const WCHAR* szFileName, LPCSTR szEntryPoint, LPC
     return S_OK;
 }
 
+int indicesToDraw;
+
 
 //--------------------------------------------------------------------------------------
 // Create Direct3D device and swap chain
@@ -396,21 +398,39 @@ HRESULT InitDevice()
     if( FAILED( hr ) )
         return hr;
 
-    // Create vertex buffer
-    SimpleVertex vertices[] =
-    {
-        { XMFLOAT3( -1.0f, 1.0f, -1.0f ), XMFLOAT4( 0.0f, 0.0f, 1.0f, 1.0f ) },
-        { XMFLOAT3( 1.0f, 1.0f, -1.0f ), XMFLOAT4( 0.0f, 1.0f, 0.0f, 1.0f ) },
-        { XMFLOAT3( 1.0f, 1.0f, 1.0f ), XMFLOAT4( 0.0f, 1.0f, 1.0f, 1.0f ) },
-        { XMFLOAT3( -1.0f, 1.0f, 1.0f ), XMFLOAT4( 1.0f, 0.0f, 0.0f, 1.0f ) },
-        { XMFLOAT3( -1.0f, -1.0f, -1.0f ), XMFLOAT4( 1.0f, 0.0f, 1.0f, 1.0f ) },
-        { XMFLOAT3( 1.0f, -1.0f, -1.0f ), XMFLOAT4( 1.0f, 1.0f, 0.0f, 1.0f ) },
-        { XMFLOAT3( 1.0f, -1.0f, 1.0f ), XMFLOAT4( 1.0f, 1.0f, 1.0f, 1.0f ) },
-        { XMFLOAT3( -1.0f, -1.0f, 1.0f ), XMFLOAT4( 0.0f, 0.0f, 0.0f, 1.0f ) },
+    const int divisionCount = 40;
+    const int vertexCount = divisionCount * 2 + 2; // Number of vertices plus two centers
+    const int indexCount = (divisionCount * 6) + (divisionCount * 2 * 3);
+    indicesToDraw = indexCount;
+
+    SimpleVertex vertices[divisionCount * 2 + 2]; // Number of vertices plus two centers
+
+    XMFLOAT4 colors[] = {
+        XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f), // Blue
+        XMFLOAT4(0.0f, 1.0f, 0.0f, 1.0f), // Green
+        XMFLOAT4(0.0f, 1.0f, 1.0f, 1.0f), // Cyan
+        XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f), // Red
+        XMFLOAT4(1.0f, 0.0f, 1.0f, 1.0f), // Magenta
+        XMFLOAT4(1.0f, 1.0f, 0.0f, 1.0f), // Yellow
     };
+
+    vertices[0] = { XMFLOAT3(0.0f, 1.0f, 0.0f), XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f) };
+    vertices[divisionCount + 1] = { XMFLOAT3(0.0f, -1.0f, 0.0f), XMFLOAT4(1.0f, 1.0f, 1.0f, 1.0f) };
+
+
+    for (int i = 0; i < divisionCount; i++) {
+        float angle = XM_2PI * i / static_cast<float>(divisionCount);
+        float x = cos(angle);
+        float z = sin(angle);
+
+        vertices[i + 1] =                   { XMFLOAT3(x, 1.0f, z), colors[i % 6] };
+
+        vertices[divisionCount + i + 2] =   { XMFLOAT3(x, -1.0f, z), colors[i % 6] };
+    }
+
     D3D11_BUFFER_DESC bd = {};
     bd.Usage = D3D11_USAGE_DEFAULT;
-    bd.ByteWidth = sizeof( SimpleVertex ) * 8;
+    bd.ByteWidth = sizeof( SimpleVertex ) * vertexCount;
     bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 	bd.CPUAccessFlags = 0;
 
@@ -426,28 +446,84 @@ HRESULT InitDevice()
     g_pImmediateContext->IASetVertexBuffers( 0, 1, &g_pVertexBuffer, &stride, &offset );
 
     // Create index buffer
+
+
+    WORD indices[indexCount];
+    /*
     WORD indices[] =
     {
-        3,1,0,
-        2,1,3,
+        // Top face
+        0, 1, 6,
+        0, 6, 5,
+        0, 5, 4,
+        0, 4, 3,
+        0, 3, 2,
+        0, 2, 1,
 
-        0,5,4,
-        1,5,0,
 
-        3,4,7,
-        0,4,3,
+        // Bottom face
+        7, 8, 9,
+        7, 9, 10,
+        7, 10, 11,
+        7, 11, 12,
+        7, 12, 13,
+        7, 13, 8,
 
-        1,6,5,
-        2,6,1,
+        // Side faces
+        5, 13, 12,
+        5, 6, 13,
 
-        2,7,6,
-        3,7,2,
+        6, 8, 13,
+        6, 1, 8,
 
-        6,4,5,
-        7,4,6,
+        1, 9, 8,
+        1, 2, 9,
+
+        2, 10, 9,
+        2, 3, 10,
+
+        3, 11, 10,
+        3, 4, 11,
+
+        4, 12, 11,
+        4, 5, 12
     };
+    */
+
+    int index = 0;
+    // Top face indices
+    for (int i = 0; i < divisionCount; ++i) {
+        indices[index++] = 0;
+        indices[index++] = (i + 1) % divisionCount + 1;
+        indices[index++] = i + 1;
+    }
+
+    // Bottom face indices
+    for (int i = 0; i < divisionCount; ++i) {
+        indices[index++] = divisionCount + 1;
+        indices[index++] = divisionCount + 2 + i;
+        indices[index++] = divisionCount + 2 + (i + 1) % divisionCount;
+    }
+    // Side face indices
+    for (int i = 0; i < divisionCount; ++i) {
+        int top1 = i + 1;
+        int top2 = (i + 1) % divisionCount + 1;
+        int bottom1 = divisionCount + 2 + i;
+        int bottom2 = divisionCount + 2 + (i + 1) % divisionCount;
+
+        // First triangle
+        indices[index++] = top1;
+        indices[index++] = bottom2;
+        indices[index++] = bottom1;
+
+        // Second triangle
+        indices[index++] = top1;
+        indices[index++] = top2;
+        indices[index++] = bottom2;
+    }
+
     bd.Usage = D3D11_USAGE_DEFAULT;
-    bd.ByteWidth = sizeof( WORD ) * 36;        // 36 vertices needed for 12 triangles in a triangle list
+    bd.ByteWidth = sizeof( WORD ) * indexCount;        // 36 vertices needed for 12 triangles in a triangle list
     bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
 	bd.CPUAccessFlags = 0;
     InitData.pSysMem = indices;
@@ -460,6 +536,17 @@ HRESULT InitDevice()
 
     // Set primitive topology
     g_pImmediateContext->IASetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
+
+    // Rasterizer
+    ID3D11RasterizerState* rasterizerState = 0;
+    D3D11_RASTERIZER_DESC rasterizerDesc;
+
+    rasterizerDesc.CullMode = D3D11_CULL_FRONT;
+    rasterizerDesc.FillMode = D3D11_FILL_SOLID;
+    rasterizerDesc.ScissorEnable = false;
+
+    g_pd3dDevice->CreateRasterizerState(&rasterizerDesc, &rasterizerState);
+    g_pImmediateContext->RSSetState(rasterizerState);
 
 	// Create the constant buffer
 	bd.Usage = D3D11_USAGE_DEFAULT;
@@ -474,7 +561,7 @@ HRESULT InitDevice()
 	g_World = XMMatrixIdentity();
 
     // Initialize the view matrix
-	XMVECTOR Eye = XMVectorSet( 0.0f, 1.0f, -5.0f, 0.0f );
+	XMVECTOR Eye = XMVectorSet( 0.0f, 2.5f, -5.0f, 0.0f );
 	XMVECTOR At = XMVectorSet( 0.0f, 1.0f, 0.0f, 0.0f );
 	XMVECTOR Up = XMVectorSet( 0.0f, 1.0f, 0.0f, 0.0f );
 	g_View = XMMatrixLookAtLH( Eye, At, Up );
@@ -562,7 +649,8 @@ void Render()
     //
     // Animate the cube
     //
-	g_World = XMMatrixRotationY( t );
+	g_World = XMMatrixRotationX( t );
+    g_World *= XMMatrixRotationY(t/3);
 
     //
     // Clear the back buffer
@@ -584,7 +672,7 @@ void Render()
 	g_pImmediateContext->VSSetShader( g_pVertexShader, nullptr, 0 );
 	g_pImmediateContext->VSSetConstantBuffers( 0, 1, &g_pConstantBuffer );
 	g_pImmediateContext->PSSetShader( g_pPixelShader, nullptr, 0 );
-	g_pImmediateContext->DrawIndexed( 36, 0, 0 );        // 36 vertices needed for 12 triangles in a triangle list
+	g_pImmediateContext->DrawIndexed(indicesToDraw, 0, 0 );        // 36 vertices needed for 12 triangles in a triangle list
 
     //
     // Present our back buffer to our front buffer
