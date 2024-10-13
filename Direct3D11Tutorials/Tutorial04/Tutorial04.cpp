@@ -22,6 +22,8 @@
 #include "resource.h"
 #include <random>
 #include <limits>
+#include <string>
+#include "GeometryGenerator.h"
 
 typedef std::mt19937 rng_type;
 std::uniform_int_distribution<rng_type::result_type> udist(0, 7);
@@ -33,11 +35,6 @@ using namespace DirectX;
 //--------------------------------------------------------------------------------------
 // Structures
 //--------------------------------------------------------------------------------------
-struct SimpleVertex
-{
-    XMFLOAT3 Pos;
-    XMFLOAT4 Color;
-};
 
 
 struct ConstantBuffer
@@ -376,7 +373,9 @@ HRESULT InitDevice()
     D3D11_INPUT_ELEMENT_DESC layout[] =
     {
         { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },
-        { "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+        { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+        { "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+        { "TEXCOORDS", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 32, D3D11_INPUT_PER_VERTEX_DATA, 0 },
 	};
 	UINT numElements = ARRAYSIZE( layout );
 
@@ -406,84 +405,33 @@ HRESULT InitDevice()
     if( FAILED( hr ) )
         return hr;
 
-    const int rows = 20;
-    const int columns = 20; 
-
-    std::vector<SimpleVertex> vertices; // Number of vertices plus two centers
-
-    XMFLOAT4 colors[] = {
-        XMFLOAT4(0.0f, 0.0f, 1.0f, 1.0f), // Blue
-        XMFLOAT4(0.0f, 1.0f, 0.0f, 1.0f), // Green
-        XMFLOAT4(0.0f, 1.0f, 1.0f, 1.0f), // Cyan
-        XMFLOAT4(1.0f, 0.0f, 0.0f, 1.0f), // Red
-        XMFLOAT4(1.0f, 0.0f, 1.0f, 1.0f), // Magenta
-        XMFLOAT4(1.0f, 1.0f, 0.0f, 1.0f), // Yellow
-    };
-
-    int count = 0;
-
-    for (int i = 0; i <= rows; ++i)
-    {
-        for (int j = 0; j <= columns; ++j)
-        {
-            float x = static_cast<float>(j) / columns * 5;
-            rng_type::result_type const seedval = count++; // get this from somewhere
-            rng.seed(seedval);
-
-            rng_type::result_type random_number = udist(rng) % 200;
-
-            // Normalize random_number between 0 and 1
-
-            double normalizedNumber = random_number / 200.0 * 5;
-
-            float y = 0.0f; // Flat grid on the XZ plane
-            float z = static_cast<float>(i) / rows * 5;
-
-            XMFLOAT4 color = XMFLOAT4(x, y, z, 1.0f); // Color based on position
-            vertices.push_back({ XMFLOAT3(x, normalizedNumber, z), color});
-        }
-    }
+    auto gen = GeometryGenerator();
+    auto meshData = gen.CreateBox(1, 1, 1, 0);
 
     D3D11_BUFFER_DESC bd = {};
     bd.Usage = D3D11_USAGE_DEFAULT;
-    bd.ByteWidth = sizeof( SimpleVertex ) * vertices.size();
+    bd.ByteWidth = sizeof( GeometryGenerator::Vertex ) * meshData.Vertices.size();
     bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
 	bd.CPUAccessFlags = 0;
 
     D3D11_SUBRESOURCE_DATA InitData = {};
-    InitData.pSysMem = vertices.data();
+    InitData.pSysMem = meshData.Vertices.data();
     hr = g_pd3dDevice->CreateBuffer( &bd, &InitData, &g_pVertexBuffer );
     if( FAILED( hr ) )
         return hr;
 
     // Set vertex buffer
-    UINT stride = sizeof( SimpleVertex );
+    UINT stride = sizeof( GeometryGenerator::Vertex );
     UINT offset = 0;
     g_pImmediateContext->IASetVertexBuffers( 0, 1, &g_pVertexBuffer, &stride, &offset );
 
-    // Create index buffer
-    std::vector<WORD> indices;
-
-    // Generate indices for triangle strips
-    for (int i = 0; i <= rows; ++i)
-    {
-        for (int j = 0; j <= columns; ++j)
-        {
-            indices.push_back((i + 1) * (columns)+j);
-            indices.push_back(i * (columns) + j);
-        }
-
-        if(rows - 1 > i)
-            indices.push_back(-1);
-    }
-
-    indicesToDraw = indices.size();
+    indicesToDraw = 36;
 
     bd.Usage = D3D11_USAGE_DEFAULT;
-    bd.ByteWidth = sizeof( WORD ) * indices.size();        // 36 vertices needed for 12 triangles in a triangle list
+    bd.ByteWidth = sizeof(WORD) * meshData.GetIndices16().size();        // 36 vertices needed for 12 triangles in a triangle list
     bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
 	bd.CPUAccessFlags = 0;
-    InitData.pSysMem = indices.data();
+    InitData.pSysMem = meshData.GetIndices16().data();
     hr = g_pd3dDevice->CreateBuffer( &bd, &InitData, &g_pIndexBuffer );
     if( FAILED( hr ) )
         return hr;
@@ -492,13 +440,13 @@ HRESULT InitDevice()
     g_pImmediateContext->IASetIndexBuffer( g_pIndexBuffer, DXGI_FORMAT_R16_UINT, 0 );
 
     // Set primitive topology
-    g_pImmediateContext->IASetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP );
+    g_pImmediateContext->IASetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
 
     // Rasterizer
     ID3D11RasterizerState* rasterizerState = 0;
     D3D11_RASTERIZER_DESC rasterizerDesc;
 
-    rasterizerDesc.CullMode = D3D11_CULL_BACK;
+    rasterizerDesc.CullMode = D3D11_CULL_NONE;
     rasterizerDesc.FillMode = D3D11_FILL_WIREFRAME;
     rasterizerDesc.ScissorEnable = false;
 
@@ -518,8 +466,8 @@ HRESULT InitDevice()
 	g_World = XMMatrixIdentity();
 
     // Initialize the view matrix
-	XMVECTOR Eye = XMVectorSet( 2.0f, 2.5f, -1.0f, 0.0f );
-	XMVECTOR At = XMVectorSet( 2.0f, 1.0f, 0.0f, 0.0f );
+	XMVECTOR Eye = XMVectorSet( 0.0f, 2.5f, -4.0f, 0.0f );
+	XMVECTOR At = XMVectorSet( 0.0f, 1.0f, 0.0f, 0.0f );
 	XMVECTOR Up = XMVectorSet( 0.0f, 1.0f, 1.0f, 0.0f );
 	g_View = XMMatrixLookAtLH( Eye, At, Up );
 
@@ -607,7 +555,7 @@ void Render()
     // Animate the cube
     //
 	//g_World = XMMatrixRotationX( t );
-    //g_World *= XMMatrixRotationY(t);
+    g_World = XMMatrixRotationY(t);
 
     //
     // Clear the back buffer
