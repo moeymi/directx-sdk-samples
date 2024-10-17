@@ -25,11 +25,6 @@
 #include <string>
 #include "GeometryGenerator.h"
 
-typedef std::mt19937 rng_type;
-std::uniform_int_distribution<rng_type::result_type> udist(0, 7);
-
-rng_type rng;
-
 using namespace DirectX;
 
 //--------------------------------------------------------------------------------------
@@ -42,6 +37,26 @@ struct ConstantBuffer
 	XMMATRIX mWorld;
 	XMMATRIX mView;
 	XMMATRIX mProjection;
+};
+
+struct RenderItem
+{
+    RenderItem() = default;
+
+    // World matrix of the shape that describes the object's local space
+    // relative to the world space, which defines the position, orientation,
+    // and scale of the object in the world.
+    XMMATRIX World = XMMatrixIdentity();
+
+    GeometryGenerator::MeshData* Geo = nullptr;
+
+    // Primitive topology.
+    D3D11_PRIMITIVE_TOPOLOGY PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+
+    ID3D11Buffer* indicesBuffer = nullptr;
+    ID3D11Buffer* verticesBuffer = nullptr;
+
+    UINT IndexCount = 0;
 };
 
 
@@ -62,12 +77,11 @@ ID3D11RenderTargetView* g_pRenderTargetView = nullptr;
 ID3D11VertexShader*     g_pVertexShader = nullptr;
 ID3D11PixelShader*      g_pPixelShader = nullptr;
 ID3D11InputLayout*      g_pVertexLayout = nullptr;
-ID3D11Buffer*           g_pVertexBuffer = nullptr;
-ID3D11Buffer*           g_pIndexBuffer = nullptr;
 ID3D11Buffer*           g_pConstantBuffer = nullptr;
 XMMATRIX                g_World;
 XMMATRIX                g_View;
 XMMATRIX                g_Projection;
+std::vector<RenderItem> g_RenderItems;
 
 
 //--------------------------------------------------------------------------------------
@@ -406,38 +420,51 @@ HRESULT InitDevice()
         return hr;
 
     auto gen = GeometryGenerator();
-    auto meshData = gen.CreateBox(1, 1, 1, 0);
 
-    D3D11_BUFFER_DESC bd = {};
-    bd.Usage = D3D11_USAGE_DEFAULT;
-    bd.ByteWidth = sizeof( GeometryGenerator::Vertex ) * meshData.Vertices.size();
-    bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-	bd.CPUAccessFlags = 0;
+    RenderItem it;
+    auto box = gen.CreateSphere(1, 5, 5);
+    it.Geo = &(box);
+    it.IndexCount = it.Geo->GetIndices16().size();
 
-    D3D11_SUBRESOURCE_DATA InitData = {};
-    InitData.pSysMem = meshData.Vertices.data();
-    hr = g_pd3dDevice->CreateBuffer( &bd, &InitData, &g_pVertexBuffer );
-    if( FAILED( hr ) )
-        return hr;
+    g_RenderItems.push_back(it);
 
-    // Set vertex buffer
-    UINT stride = sizeof( GeometryGenerator::Vertex );
-    UINT offset = 0;
-    g_pImmediateContext->IASetVertexBuffers( 0, 1, &g_pVertexBuffer, &stride, &offset );
+    RenderItem it2;
+    auto spher = gen.CreateGrid(8, 8, 10, 10);
+    it2.Geo = &(spher);
+    it2.World = XMMatrixIdentity();
+    it2.World *= XMMatrixTranslation(-0.0f, -1.0f, 0.0f);
+    it2.IndexCount = it2.Geo->GetIndices16().size();
 
-    indicesToDraw = 36;
+    g_RenderItems.push_back(it2);
 
-    bd.Usage = D3D11_USAGE_DEFAULT;
-    bd.ByteWidth = sizeof(WORD) * meshData.GetIndices16().size();        // 36 vertices needed for 12 triangles in a triangle list
-    bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
-	bd.CPUAccessFlags = 0;
-    InitData.pSysMem = meshData.GetIndices16().data();
-    hr = g_pd3dDevice->CreateBuffer( &bd, &InitData, &g_pIndexBuffer );
-    if( FAILED( hr ) )
-        return hr;
+    RenderItem it3;
+    auto cyl = gen.CreateCylinder(1,0.3f,3, 8,8);
+    it3.Geo = &(cyl);
+    it3.World = XMMatrixIdentity();
+    it3.World *= XMMatrixTranslation(-3.0f, -0.0f, 0.0f);
+    it3.IndexCount = it3.Geo->GetIndices16().size();
 
-    // Set index buffer
-    g_pImmediateContext->IASetIndexBuffer( g_pIndexBuffer, DXGI_FORMAT_R16_UINT, 0 );
+    g_RenderItems.push_back(it3);
+
+    for (auto& tt : g_RenderItems) {
+
+        D3D11_BUFFER_DESC bd = {};
+        bd.Usage = D3D11_USAGE_DEFAULT;
+        bd.ByteWidth = sizeof(GeometryGenerator::Vertex) * tt.Geo->Vertices.size();
+        bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        bd.CPUAccessFlags = 0;
+
+        D3D11_SUBRESOURCE_DATA InitData = {};
+        InitData.pSysMem = tt.Geo->Vertices.data();
+        hr = g_pd3dDevice->CreateBuffer(&bd, &InitData, &tt.verticesBuffer);
+
+        bd.Usage = D3D11_USAGE_DEFAULT;
+        bd.ByteWidth = sizeof(GeometryGenerator::uint16) * tt.Geo->GetIndices16().size();        // 36 vertices needed for 12 triangles in a triangle list
+        bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
+        bd.CPUAccessFlags = 0;
+        InitData.pSysMem = tt.Geo->GetIndices16().data();
+        hr = g_pd3dDevice->CreateBuffer(&bd, &InitData, &tt.indicesBuffer);
+    }
 
     // Set primitive topology
     g_pImmediateContext->IASetPrimitiveTopology( D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST );
@@ -454,6 +481,7 @@ HRESULT InitDevice()
     g_pImmediateContext->RSSetState(rasterizerState);
 
 	// Create the constant buffer
+    D3D11_BUFFER_DESC bd = {};
 	bd.Usage = D3D11_USAGE_DEFAULT;
 	bd.ByteWidth = sizeof(ConstantBuffer);
 	bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
@@ -466,7 +494,7 @@ HRESULT InitDevice()
 	g_World = XMMatrixIdentity();
 
     // Initialize the view matrix
-	XMVECTOR Eye = XMVectorSet( 0.0f, 2.5f, -4.0f, 0.0f );
+	XMVECTOR Eye = XMVectorSet( 0.0f, 1.5f, -4.0f, 0.0f );
 	XMVECTOR At = XMVectorSet( 0.0f, 1.0f, 0.0f, 0.0f );
 	XMVECTOR Up = XMVectorSet( 0.0f, 1.0f, 1.0f, 0.0f );
 	g_View = XMMatrixLookAtLH( Eye, At, Up );
@@ -486,8 +514,10 @@ void CleanupDevice()
     if( g_pImmediateContext ) g_pImmediateContext->ClearState();
 
     if( g_pConstantBuffer ) g_pConstantBuffer->Release();
-    if( g_pVertexBuffer ) g_pVertexBuffer->Release();
-    if( g_pIndexBuffer ) g_pIndexBuffer->Release();
+    for (auto& it : g_RenderItems) {
+        if (it.indicesBuffer) it.indicesBuffer->Release();
+        if (it.verticesBuffer) it.verticesBuffer->Release();
+    }
     if( g_pVertexLayout ) g_pVertexLayout->Release();
     if( g_pVertexShader ) g_pVertexShader->Release();
     if( g_pPixelShader ) g_pPixelShader->Release();
@@ -555,7 +585,6 @@ void Render()
     // Animate the cube
     //
 	//g_World = XMMatrixRotationX( t );
-    g_World = XMMatrixRotationY(t);
 
     //
     // Clear the back buffer
@@ -566,22 +595,34 @@ void Render()
     // Update variables
     //
     ConstantBuffer cb;
-	cb.mWorld = XMMatrixTranspose( g_World );
-	cb.mView = XMMatrixTranspose( g_View );
-	cb.mProjection = XMMatrixTranspose( g_Projection );
-	g_pImmediateContext->UpdateSubresource( g_pConstantBuffer, 0, nullptr, &cb, 0, 0 );
 
-    //
-    // Renders a triangle
-    //
-	g_pImmediateContext->VSSetShader( g_pVertexShader, nullptr, 0 );
-	g_pImmediateContext->VSSetConstantBuffers( 0, 1, &g_pConstantBuffer );
-	g_pImmediateContext->PSSetShader( g_pPixelShader, nullptr, 0 );
-	g_pImmediateContext->DrawIndexed(indicesToDraw, 0, 0 );        // 36 vertices needed for 12 triangles in a triangle list
+    g_pImmediateContext->VSSetShader(g_pVertexShader, nullptr, 0);
+    g_pImmediateContext->VSSetConstantBuffers(0, 1, &g_pConstantBuffer);
+    g_pImmediateContext->PSSetShader(g_pPixelShader, nullptr, 0);
 
+    cb.mView = XMMatrixTranspose(g_View);
+    cb.mProjection = XMMatrixTranspose(g_Projection);
+
+    for (auto& it : g_RenderItems) {
+
+        // Set index buffer
+
+        cb.mWorld = XMMatrixTranspose(it.World * XMMatrixRotationY(t));
+        g_pImmediateContext->UpdateSubresource(g_pConstantBuffer, 0, nullptr, &cb, 0, 0);
+
+        // Set vertex buffer
+        UINT stride = sizeof(GeometryGenerator::Vertex);
+        UINT offset = 0;
+        g_pImmediateContext->IASetVertexBuffers(0, 1, &it.verticesBuffer, &stride, &offset);
+
+
+        g_pImmediateContext->IASetIndexBuffer(it.indicesBuffer, DXGI_FORMAT_R16_UINT, 0);
+        g_pImmediateContext->DrawIndexed(it.IndexCount, 0, 0);
+    }
+    
     //
     // Present our back buffer to our front buffer
     //
-    g_pSwapChain->Present( 0, 0 );
+    g_pSwapChain->Present(0, 0);
 }
 
