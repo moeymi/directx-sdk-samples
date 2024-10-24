@@ -542,14 +542,36 @@ HRESULT InitDevice()
     // Initialize the world matrix
     g_World = XMMatrixIdentity();
 
-    // Initialize the view matrix
+    // Initialize the view matrix manually
     XMVECTOR Eye = XMVectorSet(.0f, 15.5f, 0.0f, 0.0f);
     XMVECTOR At = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
     XMVECTOR Up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
-    g_View = XMMatrixLookAtLH(Eye, At, Up);
 
-    // Initialize the projection matrix
-    g_Projection = XMMatrixPerspectiveFovLH(XM_PIDIV2, width / (FLOAT)height, 0.01f, 100.0f);
+    XMVECTOR zaxis = XMVector3Normalize(XMVectorSubtract(At, Eye));
+    XMVECTOR xaxis = XMVector3Normalize(XMVector3Cross(Up, zaxis));
+    XMVECTOR yaxis = XMVector3Cross(zaxis, xaxis);
+
+    g_View = XMMATRIX(
+       xaxis.m128_f32[0], yaxis.m128_f32[0], zaxis.m128_f32[0], 0.0f,
+       xaxis.m128_f32[1], yaxis.m128_f32[1], zaxis.m128_f32[1], 0.0f,
+       xaxis.m128_f32[2], yaxis.m128_f32[2], zaxis.m128_f32[2], 0.0f,
+       -XMVectorGetX(XMVector3Dot(xaxis, Eye)), -XMVectorGetX(XMVector3Dot(yaxis, Eye)), -XMVectorGetX(XMVector3Dot(zaxis, Eye)), 1.0f
+    );
+
+    // Initialize the projection matrix manually
+    float fov = XM_PIDIV2;
+    float aspectRatio = width / (FLOAT)height;
+    float nearZ = 0.01f;
+    float farZ = 100.0f;
+    float yScale = 1.0f / tan(fov / 2);
+    float xScale = yScale / aspectRatio;
+
+    g_Projection = XMMATRIX(
+       xScale, 0.0f, 0.0f, 0.0f,
+       0.0f, yScale, 0.0f, 0.0f,
+       0.0f, 0.0f, farZ / (farZ - nearZ), 1.0f,
+       0.0f, 0.0f, -nearZ * farZ / (farZ - nearZ), 0.0f
+    );
 
     return S_OK;
 }
