@@ -490,7 +490,12 @@ HRESULT InitDevice()
     RenderItem boxAxisIt;
     boxAxisIt.Geo = &(box);
     boxAxisIt.IndexCount = boxAxisIt.Geo->GetIndices16().size();
-    boxAxisIt.World = XMMatrixScaling(0.3f, 7.f, 0.3f);
+    boxAxisIt.World = XMMatrixScaling(0.3f, 7.f, 0.3f) * XMMatrixTranslation(-1.5f, 0.0f, 0.0f);
+
+    RenderItem boxAxisIt2;
+    boxAxisIt2.Geo = &(box);
+    boxAxisIt2.IndexCount = boxAxisIt.Geo->GetIndices16().size();
+    boxAxisIt2.World = XMMatrixScaling(0.3f, 7.f, 0.3f) * XMMatrixTranslation(1.5f, 0.0f, 0.0f);
 
     RenderItem box1It;
     box1It.Geo = &(box);
@@ -511,6 +516,7 @@ HRESULT InitDevice()
 
     g_RenderItems.push_back(gridIt);
     g_RenderItems.push_back(boxAxisIt);
+    g_RenderItems.push_back(boxAxisIt2);
     g_RenderItems.push_back(box1It);
     g_RenderItems.push_back(box2It);
 
@@ -562,7 +568,7 @@ HRESULT InitDevice()
     g_World = XMMatrixIdentity();
 
     // Initialize the view matrix
-    XMVECTOR Eye = XMVectorSet(2.0f, 1.5f, -6.0f, 0.0f);
+    XMVECTOR Eye = XMVectorSet(3.0f, 4.5f, -6.0f, 0.0f);
     XMVECTOR At = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
     XMVECTOR Up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
     g_View = XMMatrixLookAtLH(Eye, At, Up);
@@ -672,11 +678,14 @@ void Render()
     cb.mView = XMMatrixTranspose(g_View);
     cb.mProjection = XMMatrixTranspose(g_Projection);
 
-	g_RenderItems[2].World = XMMatrixTranslation(3.0f, 0.0f, 0.0f);
-    g_RenderItems[2].World *= XMMatrixRotationY(t);
+	g_RenderItems[3].World = XMMatrixTranslation(0.6f, 0.0f, 0.0f); // Orbit distance
+    g_RenderItems[3].World *= XMMatrixRotationY(t); // Orbit rotation
+    g_RenderItems[3].World *= XMMatrixTranslation(-1.5f, 0.0f, 0.0f); // Orbit pivot offset
 
-    g_RenderItems[3].World = XMMatrixTranslation(2.0f, 1.0f, 0.0f);
-    g_RenderItems[3].World *= XMMatrixRotationY(-t * 2);
+
+    g_RenderItems[4].World = XMMatrixTranslation(0.8f, 1.0f, 0.0f); // Orbit distance
+    g_RenderItems[4].World *= XMMatrixRotationY(-t * 2); // Orbit rotation
+    g_RenderItems[4].World *= XMMatrixTranslation(1.5f, 0.0f, 0.0f); // Orbit pivot offset
 
     for (auto& it : g_RenderItems) {
 
