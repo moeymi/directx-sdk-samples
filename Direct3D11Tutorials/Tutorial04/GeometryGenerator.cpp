@@ -7,6 +7,17 @@
 
 using namespace DirectX;
 
+const XMFLOAT3 colors[8]{
+	XMFLOAT3(1.0f, 1.0f, 1.0f),
+	XMFLOAT3(0.0f, 0.0f, 1.0f),
+	XMFLOAT3(1.0f, 0.0f, 1.0f),
+	XMFLOAT3(0.0f, 1.0f, 1.0f),
+	XMFLOAT3(0.0f, 1.0f, 0.0f),
+	XMFLOAT3(1.0f, 1.0f, 0.0f),
+	XMFLOAT3(1.0f, 0.0f, 0.0f),
+	XMFLOAT3(0.5f, 0.5f, 0.5f)
+};
+
 GeometryGenerator::MeshData GeometryGenerator::CreateBox(float width, float height, float depth, uint32 numSubdivisions)
 {
     MeshData meshData;
@@ -56,6 +67,11 @@ GeometryGenerator::MeshData GeometryGenerator::CreateBox(float width, float heig
 	v[21] = Vertex(+w2, +h2, -d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
 	v[22] = Vertex(+w2, +h2, +d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f);
 	v[23] = Vertex(+w2, -h2, +d2, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+
+	for (int i = 0; i < 24; i++)
+	{
+		v[i].Color = colors[i % 8];
+	}
 
 	meshData.Vertices.assign(&v[0], &v[24]);
  
@@ -149,6 +165,7 @@ GeometryGenerator::MeshData GeometryGenerator::CreateSphere(float radius, uint32
 
 			v.TexC.x = theta / XM_2PI;
 			v.TexC.y = phi / XM_PI;
+			v.Color = colors[(i * sliceCount + j) % 8];
 
 			meshData.Vertices.push_back( v );
 		}
@@ -236,6 +253,10 @@ void GeometryGenerator::Subdivide(MeshData& meshData)
 		Vertex v0 = inputCopy.Vertices[ inputCopy.Indices32[i*3+0] ];
 		Vertex v1 = inputCopy.Vertices[ inputCopy.Indices32[i*3+1] ];
 		Vertex v2 = inputCopy.Vertices[ inputCopy.Indices32[i*3+2] ];
+
+		v0.Color = colors[i % 8];
+		v1.Color = colors[i % 8];
+		v2.Color = colors[i % 8];
 
 		//
 		// Generate the midpoints.

@@ -25,11 +25,6 @@
 #include <string>
 #include "GeometryGenerator.h"
 
-typedef std::mt19937 rng_type;
-std::uniform_int_distribution<rng_type::result_type> udist(0, 7);
-
-rng_type rng;
-
 using namespace DirectX;
 
 //--------------------------------------------------------------------------------------
@@ -42,6 +37,26 @@ struct ConstantBuffer
     XMMATRIX mWorld;
     XMMATRIX mView;
     XMMATRIX mProjection;
+};
+
+struct RenderItem
+{
+    RenderItem() = default;
+
+    // World matrix of the shape that describes the object's local space
+    // relative to the world space, which defines the position, orientation,
+    // and scale of the object in the world.
+    XMMATRIX World = XMMatrixIdentity();
+
+    GeometryGenerator::MeshData* Geo = nullptr;
+
+    // Primitive topology.
+    D3D11_PRIMITIVE_TOPOLOGY PrimitiveType = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
+
+    ID3D11Buffer* indicesBuffer = nullptr;
+    ID3D11Buffer* verticesBuffer = nullptr;
+
+    UINT IndexCount = 0;
 };
 
 
@@ -62,12 +77,12 @@ ID3D11RenderTargetView* g_pRenderTargetView = nullptr;
 ID3D11VertexShader* g_pVertexShader = nullptr;
 ID3D11PixelShader* g_pPixelShader = nullptr;
 ID3D11InputLayout* g_pVertexLayout = nullptr;
-ID3D11Buffer* g_pVertexBuffer = nullptr;
-ID3D11Buffer* g_pIndexBuffer = nullptr;
 ID3D11Buffer* g_pConstantBuffer = nullptr;
+ID3D11DepthStencilView* pDSV;
 XMMATRIX                g_World;
 XMMATRIX                g_View;
 XMMATRIX                g_Projection;
+std::vector<RenderItem> g_RenderItems;
 
 
 //--------------------------------------------------------------------------------------
@@ -328,6 +343,68 @@ HRESULT InitDevice()
     if (FAILED(hr))
         return hr;
 
+
+    // Describe the depth-stencil buffer
+    D3D11_TEXTURE2D_DESC depthStencilDesc;
+    depthStencilDesc.Width = width; // Width of the window
+    depthStencilDesc.Height = height; // Height of the window
+    depthStencilDesc.MipLevels = 1;
+    depthStencilDesc.ArraySize = 1;
+    depthStencilDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    depthStencilDesc.SampleDesc.Count = 1;
+    depthStencilDesc.SampleDesc.Quality = 0;
+    depthStencilDesc.Usage = D3D11_USAGE_DEFAULT;
+    depthStencilDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+    depthStencilDesc.CPUAccessFlags = 0;
+    depthStencilDesc.MiscFlags = 0;
+
+    // Create the depth-stencil buffer
+    ID3D11Texture2D* depthStencilBuffer;
+    hr = g_pd3dDevice->CreateTexture2D(&depthStencilDesc, nullptr, &depthStencilBuffer);
+    if (FAILED(hr)) {
+        return hr;
+    }
+    D3D11_DEPTH_STENCIL_DESC dsDesc;
+
+    // Depth test parameters
+    dsDesc.DepthEnable = true;
+    dsDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+    dsDesc.DepthFunc = D3D11_COMPARISON_LESS;
+
+    // Stencil test parameters
+    dsDesc.StencilEnable = true;
+    dsDesc.StencilReadMask = 0xFF;
+    dsDesc.StencilWriteMask = 0xFF;
+
+    // Stencil operations if pixel is front-facing
+    dsDesc.FrontFace.StencilFailOp = D3D11_STENCIL_OP_KEEP;
+    dsDesc.FrontFace.StencilDepthFailOp = D3D11_STENCIL_OP_INCR;
+    dsDesc.FrontFace.StencilPassOp = D3D11_STENCIL_OP_KEEP;
+    dsDesc.FrontFace.StencilFunc = D3D11_COMPARISON_ALWAYS;
+
+    // Stencil operations if pixel is back-facing
+    dsDesc.BackFace.StencilFailOp = D3D11_STENCIL_OP_KEEP;
+    dsDesc.BackFace.StencilDepthFailOp = D3D11_STENCIL_OP_DECR;
+    dsDesc.BackFace.StencilPassOp = D3D11_STENCIL_OP_KEEP;
+    dsDesc.BackFace.StencilFunc = D3D11_COMPARISON_ALWAYS;
+
+    // Create depth stencil state
+    ID3D11DepthStencilState* pDSState;
+    g_pd3dDevice->CreateDepthStencilState(&dsDesc, &pDSState);
+
+    // Bind depth stencil state
+    g_pImmediateContext->OMSetDepthStencilState(pDSState, 1);
+
+    D3D11_DEPTH_STENCIL_VIEW_DESC descDSV;
+    descDSV.Format = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
+    descDSV.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D;
+    descDSV.Texture2D.MipSlice = 0;
+
+    // Create the depth stencil view
+    hr = g_pd3dDevice->CreateDepthStencilView(depthStencilBuffer, // Depth stencil texture
+        &descDSV, // Depth stencil desc
+        &pDSV);  // [out] Depth stencil view
+
     // Create a render target view
     ID3D11Texture2D* pBackBuffer = nullptr;
     hr = g_pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&pBackBuffer));
@@ -339,7 +416,7 @@ HRESULT InitDevice()
     if (FAILED(hr))
         return hr;
 
-    g_pImmediateContext->OMSetRenderTargets(1, &g_pRenderTargetView, nullptr);
+    g_pImmediateContext->OMSetRenderTargets(1, &g_pRenderTargetView, pDSV);
 
     // Setup the viewport
     D3D11_VIEWPORT vp;
@@ -376,6 +453,7 @@ HRESULT InitDevice()
         { "NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
         { "TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 24, D3D11_INPUT_PER_VERTEX_DATA, 0 },
         { "TEXCOORDS", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 32, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+        { "COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 32, D3D11_INPUT_PER_VERTEX_DATA, 0 },
     };
     UINT numElements = ARRAYSIZE(layout);
 
@@ -406,38 +484,55 @@ HRESULT InitDevice()
         return hr;
 
     auto gen = GeometryGenerator();
-    auto meshData = gen.CreateBox(1, 1, 1, 0);
 
-    D3D11_BUFFER_DESC bd = {};
-    bd.Usage = D3D11_USAGE_DEFAULT;
-    bd.ByteWidth = sizeof(GeometryGenerator::Vertex) * meshData.Vertices.size();
-    bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-    bd.CPUAccessFlags = 0;
+    auto box = gen.CreateBox(0.5f, 0.5f, 0.5f, 0);
 
-    D3D11_SUBRESOURCE_DATA InitData = {};
-    InitData.pSysMem = meshData.Vertices.data();
-    hr = g_pd3dDevice->CreateBuffer(&bd, &InitData, &g_pVertexBuffer);
-    if (FAILED(hr))
-        return hr;
+    RenderItem boxAxisIt;
+    boxAxisIt.Geo = &(box);
+    boxAxisIt.IndexCount = boxAxisIt.Geo->GetIndices16().size();
+    boxAxisIt.World = XMMatrixScaling(0.3f, 7.f, 0.3f);
 
-    // Set vertex buffer
-    UINT stride = sizeof(GeometryGenerator::Vertex);
-    UINT offset = 0;
-    g_pImmediateContext->IASetVertexBuffers(0, 1, &g_pVertexBuffer, &stride, &offset);
+    RenderItem box1It;
+    box1It.Geo = &(box);
+    box1It.IndexCount = box1It.Geo->GetIndices16().size();
 
-    indicesToDraw = 36;
 
-    bd.Usage = D3D11_USAGE_DEFAULT;
-    bd.ByteWidth = sizeof(WORD) * meshData.GetIndices16().size();        // 36 vertices needed for 12 triangles in a triangle list
-    bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
-    bd.CPUAccessFlags = 0;
-    InitData.pSysMem = meshData.GetIndices16().data();
-    hr = g_pd3dDevice->CreateBuffer(&bd, &InitData, &g_pIndexBuffer);
-    if (FAILED(hr))
-        return hr;
+    RenderItem box2It;
+    box2It.Geo = &(box);
+    box2It.IndexCount = box1It.Geo->GetIndices16().size();
 
-    // Set index buffer
-    g_pImmediateContext->IASetIndexBuffer(g_pIndexBuffer, DXGI_FORMAT_R16_UINT, 0);
+
+    RenderItem gridIt;
+    auto grid = gen.CreateGrid(8, 8, 10, 10);
+    gridIt.Geo = &(grid);
+    gridIt.World = XMMatrixIdentity();
+    gridIt.World *= XMMatrixTranslation(-0.0f, -1.0f, 0.0f);
+    gridIt.IndexCount = gridIt.Geo->GetIndices16().size();
+
+    g_RenderItems.push_back(gridIt);
+    g_RenderItems.push_back(boxAxisIt);
+    g_RenderItems.push_back(box1It);
+    g_RenderItems.push_back(box2It);
+
+    for (auto& tt : g_RenderItems) {
+
+        D3D11_BUFFER_DESC bd = {};
+        bd.Usage = D3D11_USAGE_DEFAULT;
+        bd.ByteWidth = sizeof(GeometryGenerator::Vertex) * tt.Geo->Vertices.size();
+        bd.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        bd.CPUAccessFlags = 0;
+
+        D3D11_SUBRESOURCE_DATA InitData = {};
+        InitData.pSysMem = tt.Geo->Vertices.data();
+        hr = g_pd3dDevice->CreateBuffer(&bd, &InitData, &tt.verticesBuffer);
+
+        bd.Usage = D3D11_USAGE_DEFAULT;
+        bd.ByteWidth = sizeof(GeometryGenerator::uint16) * tt.Geo->GetIndices16().size();        // 36 vertices needed for 12 triangles in a triangle list
+        bd.BindFlags = D3D11_BIND_INDEX_BUFFER;
+        bd.CPUAccessFlags = 0;
+        InitData.pSysMem = tt.Geo->GetIndices16().data();
+        hr = g_pd3dDevice->CreateBuffer(&bd, &InitData, &tt.indicesBuffer);
+    }
 
     // Set primitive topology
     g_pImmediateContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -454,6 +549,7 @@ HRESULT InitDevice()
     g_pImmediateContext->RSSetState(rasterizerState);
 
     // Create the constant buffer
+    D3D11_BUFFER_DESC bd = {};
     bd.Usage = D3D11_USAGE_DEFAULT;
     bd.ByteWidth = sizeof(ConstantBuffer);
     bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
@@ -466,9 +562,9 @@ HRESULT InitDevice()
     g_World = XMMatrixIdentity();
 
     // Initialize the view matrix
-    XMVECTOR Eye = XMVectorSet(0.0f, 2.5f, -4.0f, 0.0f);
+    XMVECTOR Eye = XMVectorSet(2.0f, 1.5f, -6.0f, 0.0f);
     XMVECTOR At = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-    XMVECTOR Up = XMVectorSet(0.0f, 1.0f, 1.0f, 0.0f);
+    XMVECTOR Up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
     g_View = XMMatrixLookAtLH(Eye, At, Up);
 
     // Initialize the projection matrix
@@ -486,8 +582,10 @@ void CleanupDevice()
     if (g_pImmediateContext) g_pImmediateContext->ClearState();
 
     if (g_pConstantBuffer) g_pConstantBuffer->Release();
-    if (g_pVertexBuffer) g_pVertexBuffer->Release();
-    if (g_pIndexBuffer) g_pIndexBuffer->Release();
+    for (auto& it : g_RenderItems) {
+        if (it.indicesBuffer) it.indicesBuffer->Release();
+        if (it.verticesBuffer) it.verticesBuffer->Release();
+    }
     if (g_pVertexLayout) g_pVertexLayout->Release();
     if (g_pVertexShader) g_pVertexShader->Release();
     if (g_pPixelShader) g_pPixelShader->Release();
@@ -498,6 +596,7 @@ void CleanupDevice()
     if (g_pImmediateContext) g_pImmediateContext->Release();
     if (g_pd3dDevice1) g_pd3dDevice1->Release();
     if (g_pd3dDevice) g_pd3dDevice->Release();
+	if (pDSV) pDSV->Release();
 }
 
 
@@ -555,7 +654,6 @@ void Render()
     // Animate the cube
     //
     //g_World = XMMatrixRotationX( t );
-    g_World = XMMatrixRotationY(t);
 
     //
     // Clear the back buffer
@@ -566,18 +664,38 @@ void Render()
     // Update variables
     //
     ConstantBuffer cb;
-    cb.mWorld = XMMatrixTranspose(g_World);
-    cb.mView = XMMatrixTranspose(g_View);
-    cb.mProjection = XMMatrixTranspose(g_Projection);
-    g_pImmediateContext->UpdateSubresource(g_pConstantBuffer, 0, nullptr, &cb, 0, 0);
 
-    //
-    // Renders a triangle
-    //
     g_pImmediateContext->VSSetShader(g_pVertexShader, nullptr, 0);
     g_pImmediateContext->VSSetConstantBuffers(0, 1, &g_pConstantBuffer);
     g_pImmediateContext->PSSetShader(g_pPixelShader, nullptr, 0);
-    g_pImmediateContext->DrawIndexed(indicesToDraw, 0, 0);        // 36 vertices needed for 12 triangles in a triangle list
+
+    cb.mView = XMMatrixTranspose(g_View);
+    cb.mProjection = XMMatrixTranspose(g_Projection);
+
+	g_RenderItems[2].World = XMMatrixTranslation(3.0f, 0.0f, 0.0f);
+    g_RenderItems[2].World *= XMMatrixRotationY(t);
+
+    g_RenderItems[3].World = XMMatrixTranslation(2.0f, 1.0f, 0.0f);
+    g_RenderItems[3].World *= XMMatrixRotationY(-t * 2);
+
+    for (auto& it : g_RenderItems) {
+
+        // Set index buffer
+
+        cb.mWorld = XMMatrixTranspose(it.World);
+        g_pImmediateContext->UpdateSubresource(g_pConstantBuffer, 0, nullptr, &cb, 0, 0);
+
+        // Set vertex buffer
+        UINT stride = sizeof(GeometryGenerator::Vertex);
+        UINT offset = 0;
+        g_pImmediateContext->IASetVertexBuffers(0, 1, &it.verticesBuffer, &stride, &offset);
+
+
+        g_pImmediateContext->IASetIndexBuffer(it.indicesBuffer, DXGI_FORMAT_R16_UINT, 0);
+        g_pImmediateContext->DrawIndexed(it.IndexCount, 0, 0);
+    }
+    if(pDSV)
+        g_pImmediateContext->ClearDepthStencilView(pDSV, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
 
     //
     // Present our back buffer to our front buffer
