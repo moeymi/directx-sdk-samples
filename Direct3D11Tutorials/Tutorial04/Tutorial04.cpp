@@ -543,7 +543,7 @@ HRESULT InitDevice()
     g_World = XMMatrixIdentity();
 
     // Initialize the view matrix
-    XMVECTOR Eye = XMVectorSet(.0f, 8.5f, 0.0f, 0.0f);
+    XMVECTOR Eye = XMVectorSet(.0f, 15.5f, 0.0f, 0.0f);
     XMVECTOR At = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
     XMVECTOR Up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
     g_View = XMMatrixLookAtLH(Eye, At, Up);
@@ -653,13 +653,23 @@ void Render()
     cb.mView = XMMatrixTranspose(g_View);
     cb.mProjection = XMMatrixTranspose(g_Projection);
 
-    g_RenderItems[0].World = XMMatrixScaling(3.0f, 3.0f, 3.0f) * XMMatrixRotationY(t / 4); // Sun
-    g_RenderItems[1].World = XMMatrixScaling(1.0f, 1.0f, 1.0f) * XMMatrixRotationY(t / 2) *
-        XMMatrixTranslation(-6.0f, 0.0f, 0.0f) * XMMatrixRotationY(t); // Earth
-    g_RenderItems[2].World = XMMatrixScaling(.5f, .5f, .5f) * XMMatrixRotationY(t / 2) *
-        XMMatrixTranslation(-6.0f, 0.0f, 0.0f) * XMMatrixRotationY(t)
-        * XMMatrixTranslation(-.2f, 0.0f, 0.0f) * XMMatrixRotationY(t / 2); // Moon
-        ;
+    float moonRotationAroundEarthSpeed = t / 2;
+	float moonRotationAroundSelfSpeed = t * 4;
+
+	float earthRotationAroundSunSpeed = t / 4;
+	float earthRotationAroundSelfSpeed = t / 2;
+
+	float sunRotationSpeed = t / 8;
+
+    g_RenderItems[0].World = XMMatrixScaling(3.0f, 3.0f, 3.0f) * XMMatrixRotationY(sunRotationSpeed); // Sun
+
+    g_RenderItems[1].World = XMMatrixScaling(1.0f, 1.0f, 1.0f) * XMMatrixRotationY(earthRotationAroundSelfSpeed) *
+        XMMatrixTranslation(-6.0f, 0.0f, 0.0f) * XMMatrixRotationY(earthRotationAroundSunSpeed); // Earth
+
+    g_RenderItems[2].World = XMMatrixScaling(.5f, .5f, .5f) * XMMatrixRotationY(moonRotationAroundSelfSpeed)
+        * XMMatrixTranslation(-2.f, 0.0f, 0.0f) * XMMatrixRotationY(moonRotationAroundEarthSpeed)
+        * XMMatrixTranslation(-6.0f, 0.0f, 0.0f) * XMMatrixRotationY(earthRotationAroundSunSpeed); // Moon
+
     for (auto& it : g_RenderItems) {
 
         // Set index buffer
