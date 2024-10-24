@@ -654,11 +654,12 @@ void Render()
     cb.mProjection = XMMatrixTranspose(g_Projection);
 
     g_RenderItems[0].World = XMMatrixScaling(3.0f, 3.0f, 3.0f) * XMMatrixRotationY(t / 4); // Sun
-    g_RenderItems[1].World = XMMatrixScaling(1.0f, 1.0f, 1.0f) * XMMatrixRotationY(t / 2) * XMMatrixTranslation(-6.0f, 0.0f, 0.0f) * XMMatrixRotationY(t); // Earth
-    g_RenderItems[2].World = XMMatrixScaling(.5f, .5f, .5f) * XMMatrixRotationY(t / 2)
-        * XMMatrixTranslation(-6.0f, 0.0f, 0.0f) * XMMatrixRotationY(t) 
-        * XMMatrixTranslation(-.5f, 0.0f, 0.0f) * XMMatrixRotationY(t / 2); // Earth
-
+    g_RenderItems[1].World = XMMatrixScaling(1.0f, 1.0f, 1.0f) * XMMatrixRotationY(t / 2) *
+        XMMatrixTranslation(-6.0f, 0.0f, 0.0f) * XMMatrixRotationY(t); // Earth
+    g_RenderItems[2].World = XMMatrixScaling(.5f, .5f, .5f) * XMMatrixRotationY(t / 2) *
+        XMMatrixTranslation(-6.0f, 0.0f, 0.0f) * XMMatrixRotationY(t)
+        * XMMatrixTranslation(-.2f, 0.0f, 0.0f) * XMMatrixRotationY(t / 2); // Moon
+        ;
     for (auto& it : g_RenderItems) {
 
         // Set index buffer
