@@ -485,40 +485,15 @@ HRESULT InitDevice()
 
     auto gen = GeometryGenerator();
 
-    auto box = gen.CreateBox(0.5f, 0.5f, 0.5f, 0);
+    auto sphere = gen.CreateSphere(1.0f, 20, 20);
 
-    RenderItem boxAxisIt;
-    boxAxisIt.Geo = &(box);
-    boxAxisIt.IndexCount = boxAxisIt.Geo->GetIndices16().size();
-    boxAxisIt.World = XMMatrixScaling(0.3f, 7.f, 0.3f) * XMMatrixTranslation(-1.5f, 0.0f, 0.0f);
+    RenderItem sunIt;
+    sunIt.Geo = &(sphere);
+    sunIt.IndexCount = sunIt.Geo->GetIndices16().size();
 
-    RenderItem boxAxisIt2;
-    boxAxisIt2.Geo = &(box);
-    boxAxisIt2.IndexCount = boxAxisIt.Geo->GetIndices16().size();
-    boxAxisIt2.World = XMMatrixScaling(0.3f, 7.f, 0.3f) * XMMatrixTranslation(1.5f, 0.0f, 0.0f);
-
-    RenderItem box1It;
-    box1It.Geo = &(box);
-    box1It.IndexCount = box1It.Geo->GetIndices16().size();
-
-
-    RenderItem box2It;
-    box2It.Geo = &(box);
-    box2It.IndexCount = box1It.Geo->GetIndices16().size();
-
-
-    RenderItem gridIt;
-    auto grid = gen.CreateGrid(8, 8, 10, 10);
-    gridIt.Geo = &(grid);
-    gridIt.World = XMMatrixIdentity();
-    gridIt.World *= XMMatrixTranslation(-0.0f, -1.0f, 0.0f);
-    gridIt.IndexCount = gridIt.Geo->GetIndices16().size();
-
-    g_RenderItems.push_back(gridIt);
-    g_RenderItems.push_back(boxAxisIt);
-    g_RenderItems.push_back(boxAxisIt2);
-    g_RenderItems.push_back(box1It);
-    g_RenderItems.push_back(box2It);
+    g_RenderItems.push_back(sunIt);
+    g_RenderItems.push_back(sunIt);
+    g_RenderItems.push_back(sunIt);
 
     for (auto& tt : g_RenderItems) {
 
@@ -568,9 +543,9 @@ HRESULT InitDevice()
     g_World = XMMatrixIdentity();
 
     // Initialize the view matrix
-    XMVECTOR Eye = XMVectorSet(3.0f, 4.5f, -6.0f, 0.0f);
+    XMVECTOR Eye = XMVectorSet(.0f, 8.5f, 0.0f, 0.0f);
     XMVECTOR At = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
-    XMVECTOR Up = XMVectorSet(0.0f, 1.0f, 0.0f, 0.0f);
+    XMVECTOR Up = XMVectorSet(0.0f, 0.0f, 1.0f, 0.0f);
     g_View = XMMatrixLookAtLH(Eye, At, Up);
 
     // Initialize the projection matrix
@@ -678,19 +653,15 @@ void Render()
     cb.mView = XMMatrixTranspose(g_View);
     cb.mProjection = XMMatrixTranspose(g_Projection);
 
-	g_RenderItems[3].World = XMMatrixTranslation(0.6f, 0.0f, 0.0f); // Orbit distance
-    g_RenderItems[3].World *= XMMatrixRotationY(t); // Orbit rotation
-    g_RenderItems[3].World *= XMMatrixTranslation(-1.5f, 0.0f, 0.0f); // Orbit pivot offset
-
-
-    g_RenderItems[4].World = XMMatrixTranslation(0.8f, 1.0f, 0.0f); // Orbit distance
-    g_RenderItems[4].World *= XMMatrixRotationY(-t * 2); // Orbit rotation
-    g_RenderItems[4].World *= XMMatrixTranslation(1.5f, 0.0f, 0.0f); // Orbit pivot offset
+    g_RenderItems[0].World = XMMatrixScaling(3.0f, 3.0f, 3.0f) * XMMatrixRotationY(t / 4); // Sun
+    g_RenderItems[1].World = XMMatrixScaling(1.0f, 1.0f, 1.0f) * XMMatrixRotationY(t / 2) * XMMatrixTranslation(-6.0f, 0.0f, 0.0f) * XMMatrixRotationY(t); // Earth
+    g_RenderItems[2].World = XMMatrixScaling(.5f, .5f, .5f) * XMMatrixRotationY(t / 2)
+        * XMMatrixTranslation(-6.0f, 0.0f, 0.0f) * XMMatrixRotationY(t) 
+        * XMMatrixTranslation(-.5f, 0.0f, 0.0f) * XMMatrixRotationY(t / 2); // Earth
 
     for (auto& it : g_RenderItems) {
 
         // Set index buffer
-
         cb.mWorld = XMMatrixTranspose(it.World);
         g_pImmediateContext->UpdateSubresource(g_pConstantBuffer, 0, nullptr, &cb, 0, 0);
 
